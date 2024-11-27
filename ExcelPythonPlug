@@ -1,0 +1,59 @@
+using System.Diagnostics;
+using System.IO;
+using ExcelDna.Integration;
+using System.Text.Json;
+
+public static class PythonExcelPlugin
+{
+    [ExcelFunction(Description = "Run a preconfigured Python script.")]
+    public static object[,] RunPythonScript(string scriptName)
+    {
+        // Map script names to their Python executables
+        var pythonExecutables = new Dictionary<string, string>
+        {
+            { "rpi", @"\\server\python_scripts\rpi_calculator.exe" },
+            { "simple_interest", @"\\server\python_scripts\simple_interest_calculator.exe" }
+        };
+
+        // Ensure the script name is valid
+        if (!pythonExecutables.ContainsKey(scriptName))
+        {
+            return new object[,] { { "Error: Invalid script name" } };
+        }
+
+        // Path to the selected Python executable
+        string pythonExecutablePath = pythonExecutables[scriptName];
+
+        // Set up the process to call the Python executable
+        ProcessStartInfo psi = new ProcessStartInfo
+        {
+            FileName = pythonExecutablePath,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        // Run the Python script and capture output
+        string resultJson;
+        using (Process process = Process.Start(psi))
+        {
+            using (StreamReader reader = process.StandardOutput)
+            {
+                resultJson = reader.ReadToEnd();
+            }
+        }
+
+        // Parse the output JSON
+        var result = JsonSerializer.Deserialize<Dictionary<string, double[]>>(resultJson);
+
+        // Convert output to a 2D array for Excel
+        double[] outputValues = result.Values.First();
+        object[,] excelOutput = new object[outputValues.Length, 1];
+        for (int i = 0; i < outputValues.Length; i++)
+        {
+            excelOutput[i, 0] = outputValues[i];
+        }
+
+        return excelOutput;
+    }
+}
