@@ -1,0 +1,83 @@
+public static class PythonPlugin
+{
+    [ExcelFunction(Description = "Call a Python script based on the specified task.")]
+    public static object[,] CallPython(string task, object[] parameters)
+    {
+        // Map task names to Python executable paths
+        var pythonExecutables = new Dictionary<string, string>
+        {
+            { "rpi", @"\\server\python_scripts\rpi_calculator\rpi_calculator.exe" },
+            { "simple_interest", @"\\server\python_scripts\simple_interest_calculator\simple_interest_calculator.exe" }
+        };
+
+        // Ensure the task is valid
+        if (!pythonExecutables.ContainsKey(task))
+        {
+            return new object[,] { { "Error: Invalid task name" } };
+        }
+
+        // Select the appropriate executable
+        string pythonExecutablePath = pythonExecutables[task];
+
+        // Check if the executable exists
+        if (!File.Exists(pythonExecutablePath))
+        {
+            return new object[,] { { $"Error: {pythonExecutablePath} not found." } };
+        }
+
+        // Prepare input JSON based on the task
+        string jsonInput = task switch
+        {
+            "rpi" => "{}",
+            "simple_interest" => JsonSerializer.Serialize(new
+            {
+                principal = parameters[0],
+                rate = parameters[1],
+                time = parameters[2]
+            }),
+            _ => throw new InvalidDataException("Unknown task")
+        };
+
+        // Set up the process to call the Python script
+        ProcessStartInfo psi = new ProcessStartInfo
+        {
+            FileName = pythonExecutablePath,
+            Arguments = $"\"{jsonInput}\"",
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        try
+        {
+            // Run the Python script and capture output
+            string resultJson;
+            using (Process process = Process.Start(psi))
+            {
+                using (StreamReader reader = process.StandardOutput)
+                {
+                    resultJson = reader.ReadToEnd();
+                }
+            }
+
+            // Parse the result JSON and convert to Excel-readable format
+            var result = JsonSerializer.Deserialize<Dictionary<string, double[]>>(resultJson);
+
+            // Convert the result to a 2D array for Excel
+            double[] output = result.Values.First();
+            object[,] excelOutput = new object[output.Length, 1];
+            for (int i = 0; i < output.Length; i++)
+            {
+                excelOutput[i, 0] = output[i];
+            }
+
+            return excelOutput;
+        }
+        catch (Exception ex)
+        {
+            // Log errors
+            File.AppendAllText(@"C:\temp\python_plugin_errors.log", $"{DateTime.Now}: {ex.Message}\n");
+            return new object[,] { { "Error: See log at C:\\temp\\python_plugin_errors.log" } };
+        }
+    }
+}
