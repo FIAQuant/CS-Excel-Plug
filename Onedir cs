@@ -1,3 +1,10 @@
+using System.Diagnostics;
+using System.IO;
+using ExcelDna.Integration;
+using System.Text.Json;
+using System.Linq; // For LINQ methods like First()
+using System.Collections.Generic;
+
 public static class PythonPlugin
 {
     [ExcelFunction(Description = "Call a Python script based on the specified task.")]
@@ -26,17 +33,23 @@ public static class PythonPlugin
         }
 
         // Prepare input JSON based on the task
-        string jsonInput = task switch
+        string jsonInput;
+        switch (task)
         {
-            "rpi" => "{}",
-            "simple_interest" => JsonSerializer.Serialize(new
-            {
-                principal = parameters[0],
-                rate = parameters[1],
-                time = parameters[2]
-            }),
-            _ => throw new InvalidDataException("Unknown task")
-        };
+            case "rpi":
+                jsonInput = "{}";
+                break;
+            case "simple_interest":
+                jsonInput = JsonSerializer.Serialize(new
+                {
+                    principal = parameters[0],
+                    rate = parameters[1],
+                    time = parameters[2]
+                });
+                break;
+            default:
+                throw new InvalidDataException("Unknown task");
+        }
 
         // Set up the process to call the Python script
         ProcessStartInfo psi = new ProcessStartInfo
