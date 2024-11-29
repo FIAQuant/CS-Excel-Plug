@@ -1,0 +1,37 @@
+import sys
+import json
+
+def calculate_pv(cashflows, discount_curve):
+    """
+    Calculate Present Value (PV) for a set of assets given cashflows and a discount rate curve.
+
+    Args:
+        cashflows (list): List of cashflows for each asset.
+        discount_curve (list): Discount rates for each period.
+
+    Returns:
+        dict: Dictionary of asset names and their corresponding PVs.
+    """
+    pv_results = {}
+
+    for asset in cashflows:
+        name = asset["asset"]
+        cashflows = asset["cashflows"]
+        pv = sum(cf / ((1 + discount_curve[i]) ** (i + 1)) for i, cf in enumerate(cashflows))
+        pv_results[name] = round(pv, 2)
+
+    return pv_results
+
+if __name__ == "__main__":
+    # Read input JSON from command-line arguments
+    input_json = json.loads(sys.argv[1])
+
+    # Extract data
+    assets = input_json["assets"]
+    discount_curve = input_json["discount_curve"]
+
+    # Calculate PVs
+    result = calculate_pv(assets, discount_curve)
+
+    # Output the result as JSON
+    print(json.dumps(result))
