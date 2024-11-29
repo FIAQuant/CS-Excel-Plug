@@ -1,0 +1,93 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using ExcelDna.Integration;
+using System.Text.Json;
+
+public static class PythonPlugin
+{
+    [ExcelFunction(Description = "Calculate Present Value of Assets using a Python script.")]
+    public static object[,] CalculatePV(object[,] cashflows, object[,] discountRates)
+    {
+        try
+        {
+            // Define the Python executable path
+            string pythonExecutablePath = @"\\server\python_scripts\pv_calculator\pv_calculator.exe";
+
+            // Check if the executable exists
+            if (!File.Exists(pythonExecutablePath))
+            {
+                return new object[,] { { $"Error: {pythonExecutablePath} not found." } };
+            }
+
+            // Convert Excel cashflows to a structured list
+            var cashflowData = new List<Dictionary<string, object>>();
+            for (int i = 0; i < cashflows.GetLength(0); i++) // Rows for assets
+            {
+                var assetData = new Dictionary<string, object>
+                {
+                    { "asset", cashflows[i, 0]?.ToString() }, // Asset name
+                    { "cashflows", Enumerable.Range(1, cashflows.GetLength(1) - 1)
+                                             .Select(j => Convert.ToDouble(cashflows[i, j] ?? 0)) // Convert cashflows
+                                             .ToArray() }
+                };
+                cashflowData.Add(assetData);
+            }
+
+            // Convert discount rates to an array
+            var discountCurve = Enumerable.Range(0, discountRates.GetLength(0))
+                                          .Select(i => Convert.ToDouble(discountRates[i, 0] ?? 0)) // Convert discount rates
+                                          .ToArray();
+
+            // Serialize input data to JSON format
+            string jsonInput = JsonSerializer.Serialize(new
+            {
+                assets = cashflowData,
+                discount_curve = discountCurve
+            });
+
+            // Configure the process to call the Python script
+            ProcessStartInfo psi = new ProcessStartInfo
+            {
+                FileName = pythonExecutablePath,
+                Arguments = $"\"{jsonInput}\"",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            // Run the Python script and capture the output
+            string resultJson;
+            using (Process process = Process.Start(psi))
+            {
+                using (StreamReader reader = process.StandardOutput)
+                {
+                    resultJson = reader.ReadToEnd();
+                }
+            }
+
+            // Parse the JSON result
+            var result = JsonSerializer.Deserialize<Dictionary<string, double>>(resultJson);
+
+            // Prepare the result as a 2D array for Excel
+            object[,] excelOutput = new object[result.Count, 2];
+            int row = 0;
+            foreach (var kvp in result)
+            {
+                excelOutput[row, 0] = kvp.Key; // Asset name
+                excelOutput[row, 1] = kvp.Value; // PV value
+                row++;
+            }
+
+            return excelOutput;
+        }
+        catch (Exception ex)
+        {
+            // Log errors and return an error message
+            File.AppendAllText(@"C:\temp\python_plugin_errors.log", $"{DateTime.Now}: {ex.Message}\n");
+            return new object[,] { { "Error: See log at C:\\temp\\python_plugin_errors.log" } };
+        }
+    }
+}
