@@ -1,0 +1,175 @@
+Simplified Step-by-Step Guide
+
+1. Ensure Python Script Packaging
+
+If your build system auto-packages the Python script:
+    1.    Verify the output folder structure includes:
+    •    pv_calculator.exe (the main executable).
+    •    Supporting files (e.g., pythonXX.dll, .pyd files).
+    •    Any dependencies required to run the script.
+    2.    Confirm the folder is deployed to a shared location:
+    •    For example: \\server\python_scripts\pv_calculator.
+
+2. Create the C# Excel Add-In
+
+Step 1: Create a New Project
+
+    1.    Open Visual Studio.
+    2.    Create a new Class Library (.NET Framework) project:
+    •    File > New > Project > Select Class Library (.NET Framework) > Choose C# > Name it PythonExcelPlugin > Click Create.
+    •    Use .NET Framework 4.7.2 or higher.
+
+Step 2: Add NuGet Packages
+
+    1.    Open Tools > NuGet Package Manager > Manage NuGet Packages for Solution.
+    2.    Install:
+    •    Excel-DNA.AddIn: For Excel integration.
+    •    System.Text.Json: For JSON handling.
+
+Step 3: Write the Code
+
+Replace the default Class1.cs with this code:
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using ExcelDna.Integration;
+using System.Text.Json;
+
+public static class PythonPlugin
+{
+    [ExcelFunction(Description = "Calculate Present Value of Assets using a Python script.")]
+    public static object[,] CalculatePV(object[,] cashflows, object[,] discountRates)
+    {
+        try
+        {
+            // Path to the pre-packaged Python script folder
+            string pythonExecutablePath = @"\\server\python_scripts\pv_calculator\pv_calculator.exe";
+
+            // Verify the executable exists
+            if (!File.Exists(pythonExecutablePath))
+            {
+                return new object[,] { { $"Error: {pythonExecutablePath} not found." } };
+            }
+
+            // Convert Excel inputs to JSON
+            var cashflowData = new List<Dictionary<string, object>>();
+            for (int i = 0; i < cashflows.GetLength(0); i++)
+            {
+                var asset = new Dictionary<string, object>
+                {
+                    { "asset", cashflows[i, 0]?.ToString() },
+                    { "cashflows", Enumerable.Range(1, cashflows.GetLength(1) - 1)
+                                             .Select(j => Convert.ToDouble(cashflows[i, j] ?? 0))
+                                             .ToArray() }
+                };
+                cashflowData.Add(asset);
+            }
+
+            var discountCurve = Enumerable.Range(0, discountRates.GetLength(0))
+                                          .Select(i => Convert.ToDouble(discountRates[i, 0] ?? 0))
+                                          .ToArray();
+
+            string jsonInput = JsonSerializer.Serialize(new
+            {
+                assets = cashflowData,
+                discount_curve = discountCurve
+            });
+
+            // Configure the process to run the Python script
+            ProcessStartInfo psi = new ProcessStartInfo
+            {
+                FileName = pythonExecutablePath,
+                Arguments = $"\"{jsonInput}\"",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            // Execute the Python script
+            string resultJson;
+            using (Process process = Process.Start(psi))
+            {
+                using (StreamReader reader = process.StandardOutput)
+                {
+                    resultJson = reader.ReadToEnd();
+                }
+            }
+
+            // Parse and return the output
+            var result = JsonSerializer.Deserialize<Dictionary<string, double>>(resultJson);
+            object[,] excelOutput = new object[result.Count, 2];
+            int row = 0;
+            foreach (var kvp in result)
+            {
+                excelOutput[row, 0] = kvp.Key;
+                excelOutput[row, 1] = kvp.Value;
+                row++;
+            }
+
+            return excelOutput;
+        }
+        catch (Exception ex)
+        {
+            File.AppendAllText(@"C:\temp\python_plugin_errors.log", $"{DateTime.Now}: {ex.Message}\n");
+            return new object[,] { { "Error: See log at C:\\temp\\python_plugin_errors.log" } };
+        }
+    }
+}
+
+Step 4: Add a .DNA Configuration File
+
+    1.    Add a new text file to the project.
+    2.    Name it PythonExcelPlugin.dna.
+    3.    Add the following content:
+
+<DnaLibrary>
+    <Reference Path="PythonExcelPlugin.dll" />
+</DnaLibrary>
+
+Step 5: Build the Add-In
+
+    1.    Build the project (Ctrl + Shift + B).
+    2.    Navigate to the bin\Debug folder to find:
+    •    PythonExcelPlugin.dll
+    •    PythonExcelPlugin.dna
+
+3. Package the Add-In
+
+    1.    Download Excel-DNA Pack:
+    •    From Excel-DNA GitHub Releases.
+    2.    Copy ExcelDnaPack.exe:
+    •    Place it in the bin\Debug folder.
+    3.    Create the .XLL File:
+    •    Open a terminal, navigate to the bin\Debug folder:
+
+cd path\to\bin\Debug
+
+
+    •    Run the following command:
+
+ExcelDnaPack.exe /Xll PythonExcelPlugin.dna
+
+
+    •    This will generate PythonExcelPlugin.xll.
+
+4. Deploy and Test
+
+    1.    Deploy the Python Script Folder:
+    •    Ensure the dist folder (--onedir) with the pv_calculator.exe is deployed to \\server\python_scripts.
+    2.    Load the Add-In in Excel:
+    •    In Excel, go to File > Options > Add-ins.
+    •    Select Excel Add-ins > Go > Browse and load the .xll.
+    3.    Test the Add-In:
+    •    Input cashflows and discount rates in Excel:
+
+=CalculatePV(A1:D3, F1:F3)
+
+
+    •    A1:D3: Range of cashflows.
+    •    F1:F3: Range of discount rates.
+
+    4.    Verify Output:
+    •    The Present Value for each asset should be calculated and displayed.
