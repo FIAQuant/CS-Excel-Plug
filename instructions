@@ -1,6 +1,12 @@
 Simplified Step-by-Step Guide
 
-1. Ensure Python Script Packaging
+
+1. Precompile Python Code
+
+Use PyInstaller:
+pyinstaller --onefile myscript.py
+This will create a standalone .exe file that can run without Python.
+Ensure all your required Python libraries are bundled.
 
 If your build system auto-packages the Python script:
     1.    Verify the output folder structure includes:
